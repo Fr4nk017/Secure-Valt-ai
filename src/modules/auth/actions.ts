@@ -1,0 +1,477 @@
+'use server'
+
+/**
+ * Server Actions de autenticación para SecureVault AI.
+ *
+ * Estas acciones se ejecutan en el servidor y tienen acceso
+ * directo a las cookies de sesión de Supabase.
+ *
+ * Se usan desde los Client Components (LoginForm, RegisterForm)
+ * y desde el botón de logout en el sidebar.
+ */
+
+import { redirect } from 'next/navigation'
+import { z } from 'zod'
+import { createClient } from '@/lib/supabase/server'
+import { prisma } from '@/lib/prisma'
+import { logEvent } from '@/modules/audit/audit.service'
+import { PLAN_CONFIG } from '@/modules/subscriptions/subscriptions.service'
+import { headers } from 'next/headers'
+
+// ── Schemas de validación ─────────────────────────────────────
+
+const loginSchema = z.object({
+  email: z.string().email('Ingresa un email válido'),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+})
+
+const registerSchema = z.object({
+  name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres').max(100),
+  email: z.string().email('Ingresa un email válido'),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+  role: z.enum(['ADMIN_COMPANY', 'NOTARY']),
+  companyName: z.string().max(200).optional(),
+  companyRut: z.string().max(30).optional(),
+  companyAddress: z.string().max(300).optional(),
+  companyBusinessLine: z.string().max(200).optional(),
+})
+
+// ── loginAction ───────────────────────────────────────────────
+
+export async function loginAction(
+  formData: FormData
+): Promise<{ error: string } | void> {
+  const raw = {
+    email: (formData.get('email') as string)?.trim().toLowerCase(),
+    password: formData.get('password') as string,
+  }
+
+  const parsed = loginSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.signInWithPassword({
+    email: parsed.data.email,
+    password: parsed.data.password,
+  })
+
+  if (error) {
+    // Mensaje genérico — no revelar si es email o password
+    return { error: 'Credenciales incorrectas. Por favor intenta de nuevo.' }
+  }
+
+  // Registrar login en auditoría
+  const dbUser = await prisma.user.findUnique({
+    where: { email: parsed.data.email },
+    select: { id: true, companyId: true },
+  })
+  if (dbUser) {
+    await logEvent({ action: 'LOGIN', userId: dbUser.id, companyId: dbUser.companyId })
+  }
+
+  redirect('/dashboard')
+}
+
+// ── registerAction ────────────────────────────────────────────
+
+export async function registerAction(
+  formData: FormData
+): Promise<{ error: string } | void> {
+  const raw = {
+    name: (formData.get('name') as string)?.trim(),
+    email: (formData.get('email') as string)?.trim().toLowerCase(),
+    password: formData.get('password') as string,
+    role: ((formData.get('role') as string) || 'ADMIN_COMPANY').trim(),
+    companyName: (formData.get('companyName') as string)?.trim() || undefined,
+    companyRut: (formData.get('companyRut') as string)?.trim() || undefined,
+    companyAddress: (formData.get('companyAddress') as string)?.trim() || undefined,
+    companyBusinessLine: (formData.get('companyBusinessLine') as string)?.trim() || undefined,
+  }
+
+  const parsed = registerSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const {
+    name,
+    email,
+    password,
+    role,
+    companyName,
+    companyRut,
+    companyAddress,
+    companyBusinessLine,
+  } = parsed.data
+
+  // Seguridad: el rol ADMIN nunca puede ser auto-registrado
+  if ((role as string) === 'ADMIN') {
+    return { error: 'El rol de Administrador del Sistema no puede ser registrado por esta vía.' }
+  }
+
+  if (role === 'ADMIN_COMPANY') {
+    if (!companyName || !companyRut || !companyAddress || !companyBusinessLine) {
+      return { error: 'Para Administrador de Empresa debes completar nombre, RUT, dirección y giro.' }
+    }
+  }
+  const supabase = await createClient()
+
+  // 1. Crear usuario en Supabase Auth
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { name }, // metadata del usuario en auth.users
+    },
+  })
+
+  if (authError) {
+    if (
+      authError.message.toLowerCase().includes('already registered') ||
+      authError.message.toLowerCase().includes('already exists')
+    ) {
+      return {
+        error: 'Este email ya está registrado. Intenta iniciar sesión.',
+      }
+    }
+    console.error('[registerAction] Supabase Auth error:', authError.message)
+    return { error: 'Error al crear la cuenta. Por favor intenta de nuevo.' }
+  }
+
+  if (!authData.user) {
+    return { error: 'Error al crear la cuenta. Por favor intenta de nuevo.' }
+  }
+
+  // 2. Crear registros en Prisma (transacción)
+  try {
+    await prisma.$transaction(async (tx) => {
+      let targetCompanyId = ''
+
+      if (role === 'ADMIN_COMPANY') {
+        const company = await tx.company.create({
+          data: {
+            name: companyName!,
+            email,
+            rut: companyRut,
+            address: companyAddress,
+            businessLine: companyBusinessLine,
+            adminName: name,
+          },
+        })
+        targetCompanyId = company.id
+        // Crear suscripción FREE automáticamente para la nueva empresa dentro de la transacción
+        await tx.subscription.create({
+          data: {
+            companyId: company.id,
+            plan: 'FREE',
+            status: 'ACTIVE',
+            maxUsers: PLAN_CONFIG.FREE.maxUsers,
+            maxDocuments: PLAN_CONFIG.FREE.maxDocuments,
+          },
+        })
+      } else {
+        const secureVaultCompany = await tx.company.upsert({
+          where: { email: 'admin@securevault.cl' },
+          update: {
+            name: 'Secure Vault',
+          },
+          create: {
+            name: 'Secure Vault',
+            email: 'admin@securevault.cl',
+            rut: '76.000.000-0',
+            address: 'Santiago, Chile',
+            businessLine: 'Software y Ciberseguridad',
+            adminName: 'Equipo Secure Vault',
+            description: 'Empresa base del sistema SecureVault',
+          },
+        })
+        targetCompanyId = secureVaultCompany.id
+      }
+
+      await tx.user.create({
+        data: {
+          supabaseId: authData.user!.id,
+          email,
+          name,
+          role,
+          companyId: targetCompanyId,
+        },
+      })
+    })
+  } catch (dbError: unknown) {
+    console.error('[registerAction] DB error:', dbError)
+    // La empresa ya existe con ese email (seed o registro previo)
+    const pgError = dbError as { code?: string }
+    if (pgError?.code === 'P2002') {
+      return {
+        error: 'Ya existe una empresa registrada con este email.',
+      }
+    }
+    return {
+      error: 'Error al configurar tu cuenta. Por favor contacta soporte.',
+    }
+  }
+
+  // Registrar registro en auditoría
+  const newUser = await prisma.user.findUnique({ where: { email }, select: { id: true, companyId: true } })
+  if (newUser) {
+    await logEvent({
+      action: 'REGISTER',
+      userId: newUser.id,
+      companyId: newUser.companyId,
+      metadata: {
+        name,
+        role,
+        companyName: companyName ?? 'Secure Vault',
+      },
+    })
+  }
+
+  redirect('/dashboard')
+}
+
+// ── logoutAction ──────────────────────────────────────────────
+
+export async function logoutAction(): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (user) {
+    const dbUser = await prisma.user.findUnique({
+      where: { supabaseId: user.id },
+      select: { id: true, companyId: true },
+    })
+    if (dbUser) {
+      await logEvent({ action: 'LOGOUT', userId: dbUser.id, companyId: dbUser.companyId })
+    }
+  }
+
+  await supabase.auth.signOut()
+  redirect('/login')
+}
+// ── completeOAuthRegistrationAction ─────────────────────────────
+
+const oauthCompleteSchema = z.object({
+  role: z.enum(['ADMIN_COMPANY', 'NOTARY']),
+  companyName: z.string().max(200).optional(),
+  companyRut: z.string().max(30).optional(),
+  companyAddress: z.string().max(300).optional(),
+  companyBusinessLine: z.string().max(200).optional(),
+})
+
+export async function completeOAuthRegistrationAction(
+  formData: FormData
+): Promise<{ error: string } | void> {
+  const raw = {
+    role: ((formData.get('role') as string) || 'ADMIN_COMPANY').trim(),
+    companyName: (formData.get('companyName') as string)?.trim() || undefined,
+    companyRut: (formData.get('companyRut') as string)?.trim() || undefined,
+    companyAddress: (formData.get('companyAddress') as string)?.trim() || undefined,
+    companyBusinessLine: (formData.get('companyBusinessLine') as string)?.trim() || undefined,
+  }
+
+  const parsed = oauthCompleteSchema.safeParse(raw)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
+  }
+
+  const { role, companyName, companyRut, companyAddress, companyBusinessLine } = parsed.data
+
+  if (role === 'ADMIN_COMPANY') {
+    if (!companyName || !companyRut || !companyAddress || !companyBusinessLine) {
+      return { error: 'Para Administrador de Empresa debes completar nombre, RUT, dirección y giro.' }
+    }
+  }
+
+  const supabase = await createClient()
+  const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+
+  if (authError || !authUser) {
+    return { error: 'Sesión no válida o expirada. Por favor, inicia sesión nuevamente.' }
+  }
+
+  const name = authUser.user_metadata?.full_name
+    || authUser.user_metadata?.name
+    || authUser.email?.split('@')[0]
+    || 'Usuario'
+  const email = authUser.email!
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      let targetCompanyId = ''
+
+      if (role === 'ADMIN_COMPANY') {
+        const company = await tx.company.create({
+          data: {
+            name: companyName!,
+            email,
+            rut: companyRut,
+            address: companyAddress,
+            businessLine: companyBusinessLine,
+            adminName: name,
+          },
+        })
+        targetCompanyId = company.id
+        // Crear suscripción FREE automáticamente para la nueva empresa dentro de la transacción
+        await tx.subscription.create({
+          data: {
+            companyId: company.id,
+            plan: 'FREE',
+            status: 'ACTIVE',
+            maxUsers: PLAN_CONFIG.FREE.maxUsers,
+            maxDocuments: PLAN_CONFIG.FREE.maxDocuments,
+          },
+        })
+      } else {
+        const secureVaultCompany = await tx.company.upsert({
+          where: { email: 'admin@securevault.cl' },
+          update: { name: 'Secure Vault' },
+          create: {
+            name: 'Secure Vault',
+            email: 'admin@securevault.cl',
+            rut: '76.000.000-0',
+            address: 'Santiago, Chile',
+            businessLine: 'Software y Ciberseguridad',
+            adminName: 'Equipo Secure Vault',
+            description: 'Empresa base del sistema SecureVault',
+          },
+        })
+        targetCompanyId = secureVaultCompany.id
+      }
+
+      await tx.user.create({
+        data: {
+          supabaseId: authUser.id,
+          email,
+          name,
+          role,
+          companyId: targetCompanyId,
+        },
+      })
+    })
+  } catch (dbError: unknown) {
+    console.error('[completeOAuth] DB error:', dbError)
+    const pgError = dbError as { code?: string }
+    if (pgError?.code === 'P2002') {
+      return { error: 'Ya existe una cuenta con este correo.' }
+    }
+    return { error: 'Error al configurar tu cuenta. Por favor contacta soporte.' }
+  }
+
+  const newUser = await prisma.user.findUnique({ where: { supabaseId: authUser.id }, select: { id: true, companyId: true } })
+  if (newUser) {
+    await logEvent({
+      action: 'REGISTER',
+      userId: newUser.id,
+      companyId: newUser.companyId,
+      metadata: { name, role, companyName: companyName ?? 'Secure Vault', source: 'OAuth' },
+    })
+  }
+
+  redirect('/dashboard')
+}
+
+// ── requestPasswordResetAction ─────────────────────────────────
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email('Ingresa un email válido'),
+})
+
+export async function requestPasswordResetAction(
+  formData: FormData
+): Promise<{ error?: string; success?: boolean; message?: string } | void> {
+  const email = (formData.get('email') as string)?.trim().toLowerCase()
+
+  const parsed = forgotPasswordSchema.safeParse({ email })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Email inválido' }
+  }
+
+  try {
+    const supabase = await createClient()
+    
+    // Obtener origen dinámico para callback
+    const reqHeaders = await headers()
+    const host = reqHeaders.get('host') ?? 'localhost:3000'
+    const protocol = host.includes('localhost') || host.includes('127.0.0.1') ? 'http' : 'https'
+    const origin = `${protocol}://${host}`
+
+    const redirectTo = `${origin}/api/auth/callback?next=/reset-password`
+
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+      redirectTo,
+    })
+
+    if (error) {
+      console.error('[requestPasswordResetAction] Error Supabase:', error.message)
+      return { error: 'Error al enviar el correo de recuperación. Inténtalo de nuevo.' }
+    }
+
+    return {
+      success: true,
+      message: 'Te hemos enviado un enlace de recuperación. Por favor, revisa tu correo electrónico.',
+    }
+  } catch (err) {
+    console.error('[requestPasswordResetAction] Unexpected error:', err)
+    return { error: 'Ocurrió un error inesperado. Inténtalo más tarde.' }
+  }
+}
+
+// ── resetPasswordAction ────────────────────────────────────────
+
+const resetPasswordSchema = z.object({
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+})
+
+export async function resetPasswordAction(
+  formData: FormData
+): Promise<{ error?: string; success?: boolean } | void> {
+  const password = formData.get('password') as string
+  const confirmPassword = formData.get('confirmPassword') as string
+
+  if (password !== confirmPassword) {
+    return { error: 'Las contraseñas no coinciden' }
+  }
+
+  const parsed = resetPasswordSchema.safeParse({ password })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Contraseña inválida' }
+  }
+
+  try {
+    const supabase = await createClient()
+
+    const { error } = await supabase.auth.updateUser({
+      password: parsed.data.password,
+    })
+
+    if (error) {
+      console.error('[resetPasswordAction] Error Supabase:', error.message)
+      return { error: 'No se pudo actualizar la contraseña. El enlace puede haber expirado.' }
+    }
+
+    // Registrar en auditoría
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const dbUser = await prisma.user.findUnique({
+        where: { supabaseId: user.id },
+        select: { id: true, companyId: true },
+      })
+      if (dbUser) {
+        await logEvent({
+          action: 'LOGIN',
+          userId: dbUser.id,
+          companyId: dbUser.companyId,
+          metadata: { email: user.email, method: 'password_reset' }
+        })
+      }
+    }
+
+    return { success: true }
+  } catch (err) {
+    console.error('[resetPasswordAction] Unexpected error:', err)
+    return { error: 'Ocurrió un error al actualizar la contraseña.' }
+  }
+}
