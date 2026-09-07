@@ -24,6 +24,10 @@ jobs:
           node-version: '22.x'
 
       - name: npm install, build, and test
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://ttlpjjwkzygmgcyrbafv.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0bHBqandrenlnbWdjeXJiYWZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NTAyMDgsImV4cCI6MjEwNDAyNjIwOH0.4mAoeg5kcMcyWUnuvMXda0smctA1eAiybkFD8nv3qSw"
+          NEXT_PUBLIC_APP_URL: "https://securevault-ai-francisco-dth5fndpbma0d2hy.brazilsouth-01.azurewebsites.net"
         run: |
           npm install
           npm run build --if-present
@@ -62,4 +66,3 @@ jobs:
           app-name: 'securevault-ai-francisco'
           slot-name: 'Production'
           package: .
-          

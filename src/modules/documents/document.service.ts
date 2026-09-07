@@ -129,8 +129,9 @@ export async function uploadDocument({
 
   // 7. Indexar documento para RAG (fire-and-forget, no bloquea el upload)
   try {
-    // @ts-ignore — pdf-parse v1 uses CommonJS default export
-    const pdfParse = (await import('pdf-parse')).default
+    // @ts-ignore — import direct lib to avoid pdf-parse test file bug during build
+    const pdfModule = await import('pdf-parse/lib/pdf-parse.js')
+    const pdfParse = pdfModule.default || pdfModule
     const parsed = await pdfParse(buffer)
     if (parsed.text && parsed.text.trim().length > 50) {
       // Ejecutar en background — no esperamos a que termine

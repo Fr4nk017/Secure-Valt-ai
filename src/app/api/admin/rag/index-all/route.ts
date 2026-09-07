@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { indexDocument } from '@/lib/embeddings'
 
+export const dynamic = 'force-dynamic'
+
 const BUCKET = 'documents'
 
 /**
@@ -57,8 +59,9 @@ export async function POST() {
 
         // Extraer texto
         const buffer = Buffer.from(await fileData.arrayBuffer())
-        // @ts-ignore — pdf-parse v1 uses CommonJS default export
-        const pdfParse = (await import('pdf-parse')).default
+        // @ts-ignore — import direct lib to avoid pdf-parse test file bug during build
+        const pdfModule = await import('pdf-parse/lib/pdf-parse.js')
+        const pdfParse = pdfModule.default || pdfModule
         const parsed = await pdfParse(buffer)
 
         if (!parsed.text || parsed.text.trim().length < 50) {
