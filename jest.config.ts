@@ -16,6 +16,7 @@ const config: Config = {
     // Mapeo de alias para TypeScript
     '^@/(.*)$': '<rootDir>/src/$1',
   },
+  modulePathIgnorePatterns: ['<rootDir>/.next/'],
 }
 
 // Se exporta createJestConfig de esta forma para asegurar que next/jest cargue la configuración de Next.js
