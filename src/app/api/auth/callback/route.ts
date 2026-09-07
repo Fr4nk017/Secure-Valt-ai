@@ -18,15 +18,22 @@ import { createServerClient } from '@supabase/ssr'
 import { prisma } from '@/lib/prisma'
 
 function getAppOrigin(request: NextRequest) {
-  const host = request.headers.get('host') ?? ''
+  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? ''
 
   if (host.includes('localhost') || host.includes('127.0.0.1')) {
     return `http://${host}`
   }
 
-  // En Azure el host puede llegar como contenedor interno (xxxxx:8080).
-  // Para cualquier entorno no-local usamos siempre el dominio público.
-  return 'https://securevault-ai.azurewebsites.net'
+  if (host) {
+    const proto = request.headers.get('x-forwarded-proto') ?? 'https'
+    return `${proto}://${host}`
+  }
+
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')
+  }
+
+  return 'http://localhost:3000'
 }
 
 export async function GET(request: NextRequest) {
