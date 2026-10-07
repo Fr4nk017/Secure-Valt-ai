@@ -79,6 +79,20 @@ export function LoginForm() {
         {googleLoading ? 'Redirigiendo...' : 'Continuar con Google'}
       </button>
 
+      {/* Microsoft Entra ID (MSAL) → portal corporativo */}
+      <Link
+        href="/portal"
+        className="w-full h-11 flex items-center justify-center gap-3 rounded-lg border border-border bg-card hover:bg-muted transition-colors text-sm font-medium text-foreground"
+      >
+        <svg className="w-4 h-4" viewBox="0 0 23 23">
+          <path fill="#f35325" d="M1 1h10v10H1z" />
+          <path fill="#81bc06" d="M12 1h10v10H12z" />
+          <path fill="#05a6f0" d="M1 12h10v10H1z" />
+          <path fill="#ffba08" d="M12 12h10v10H12z" />
+        </svg>
+        Continuar con Microsoft
+      </Link>
+
       {/* Separador */}
       <div className="relative">
         <div className="absolute inset-0 flex items-center">

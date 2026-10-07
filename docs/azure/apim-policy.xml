@@ -1,0 +1,59 @@
+<!--
+  Azure API Management — política inbound para la API "securevault" (versión v1).
+  Equivale al JWT Authorizer de AWS API Gateway: valida el token de Entra ID
+  ANTES de reenviar la petición al BFF en Azure App Service.
+
+  Reemplazar {{tenant-id}}, {{api-client-id}} y {{frontend-origin}} (o definirlos como Named Values).
+-->
+<policies>
+  <inbound>
+    <base />
+    <cors allow-credentials="false">
+      <allowed-origins>
+        <origin>{{frontend-origin}}</origin>
+      </allowed-origins>
+      <allowed-methods>
+        <method>GET</method>
+        <method>POST</method>
+        <method>PUT</method>
+        <method>DELETE</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>Authorization</header>
+        <header>Content-Type</header>
+      </allowed-headers>
+    </cors>
+    <!-- Validación del JWT: firma (JWKS vía OpenID config), iss, aud, exp y scope -->
+    <validate-jwt header-name="Authorization" failed-validation-httpcode="401"
+                  failed-validation-error-message="Token inválido o ausente" require-scheme="Bearer"
+                  require-expiration-time="true" require-signed-tokens="true">
+      <openid-config url="https://login.microsoftonline.com/{{tenant-id}}/v2.0/.well-known/openid-configuration" />
+      <audiences>
+        <audience>{{api-client-id}}</audience>
+        <audience>api://{{api-client-id}}</audience>
+      </audiences>
+      <issuers>
+        <issuer>https://login.microsoftonline.com/{{tenant-id}}/v2.0</issuer>
+      </issuers>
+      <required-claims>
+        <claim name="scp" match="any" separator=" ">
+          <value>access_as_user</value>
+        </claim>
+      </required-claims>
+    </validate-jwt>
+    <!-- Throttling: 100 llamadas por minuto por usuario (claim oid) -->
+    <rate-limit-by-key calls="100" renewal-period="60"
+                       counter-key="@(context.Request.Headers.GetValueOrDefault(&quot;Authorization&quot;,&quot;&quot;).AsJwt()?.Claims.GetValueOrDefault(&quot;oid&quot;, &quot;anon&quot;))" />
+    <!-- Reenviar al BFF versionado (el BFF vuelve a validar el JWT: defensa en profundidad) -->
+    <set-backend-service base-url="https://securevault-ai-francisco-dth5fndpbma0d2hy.brazilsouth-01.azurewebsites.net/api/bff/v1" />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

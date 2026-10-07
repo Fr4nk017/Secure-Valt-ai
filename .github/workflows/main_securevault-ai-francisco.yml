@@ -25,9 +25,14 @@ jobs:
 
       - name: npm install, build, and test
         env:
-          NEXT_PUBLIC_SUPABASE_URL: "https://ttlpjjwkzygmgcyrbafv.supabase.co"
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0bHBqandrenlnbWdjeXJiYWZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NTAyMDgsImV4cCI6MjEwNDAyNjIwOH0.4mAoeg5kcMcyWUnuvMXda0smctA1eAiybkFD8nv3qSw"
+          NEXT_PUBLIC_SUPABASE_URL: "https://lbbxduncrgmffmrvdqtu.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxiYnhkdW5jcmdtZmZtcnZkcXR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNDc2NjMsImV4cCI6MjA5MTYyMzY2M30.WlEn-9GPBQ07hGylgOtCk8amVO0hIAtFDPyzCiV_Gss"
           NEXT_PUBLIC_APP_URL: "https://securevault-ai-francisco-dth5fndpbma0d2hy.brazilsouth-01.azurewebsites.net"
+          # Microsoft Entra ID (MSAL) — definir en Settings → Secrets and variables → Actions → Variables
+          NEXT_PUBLIC_ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+          NEXT_PUBLIC_ENTRA_CLIENT_ID: ${{ vars.ENTRA_SPA_CLIENT_ID }}
+          NEXT_PUBLIC_ENTRA_API_SCOPE: ${{ vars.ENTRA_API_SCOPE }}
+          NEXT_PUBLIC_BFF_BASE_URL: ${{ vars.BFF_BASE_URL || '/api/bff/v1' }}
         run: |
           npm install
           npm run build --if-present
