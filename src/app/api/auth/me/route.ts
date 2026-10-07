@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isMfaPending } from '@/lib/supabase/mfa'
 import { prisma } from '@/lib/prisma'
 
 /**
@@ -18,6 +19,9 @@ export async function GET() {
 
     if (!authUser) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+    if (await isMfaPending(supabase, authUser)) {
+      return NextResponse.json({ error: 'Se requiere verificación en dos pasos' }, { status: 401 })
     }
 
     const user = await prisma.user.findUnique({

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
+import { isMfaPending } from '@/lib/supabase/mfa'
 import { prisma } from '@/lib/prisma'
 
 const updateNameSchema = z.object({
@@ -23,6 +24,9 @@ export async function updateUserNameAction(
   const { data: { user: authUser } } = await supabase.auth.getUser()
   if (!authUser) {
     redirect('/login')
+  }
+  if (await isMfaPending(supabase, authUser)) {
+    redirect('/verify-2fa')
   }
 
   const dbUser = await prisma.user.findUnique({

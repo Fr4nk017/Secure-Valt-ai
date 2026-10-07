@@ -6,6 +6,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
+import { isMfaPending } from '@/lib/supabase/mfa'
 import { prisma } from '@/lib/prisma'
 import type { UserRole } from '@/types'
 
@@ -30,6 +31,8 @@ export async function getAuthUser(): Promise<AuthUser | null> {
     } = await supabase.auth.getUser()
 
     if (!authUser) return null
+    // 2FA activo pero no verificado en esta sesión → sin acceso a datos
+    if (await isMfaPending(supabase, authUser)) return null
 
     const user = await prisma.user.findUnique({
       where: { supabaseId: authUser.id },

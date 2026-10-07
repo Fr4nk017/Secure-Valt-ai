@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { WebpayPlus, Options, Environment, IntegrationCommerceCodes, IntegrationApiKeys } from 'transbank-sdk'
 import { createClient } from '@/lib/supabase/server'
+import { isMfaPending } from '@/lib/supabase/mfa'
 import { prisma } from '@/lib/prisma'
 import type { SubscriptionPlan } from '@prisma/client'
 
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
     // 1. Autenticar usuario
     const supabase = await createClient()
     const { data: { user: authUser } } = await supabase.auth.getUser()
-    if (!authUser) {
+    if (!authUser || (await isMfaPending(supabase, authUser))) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 

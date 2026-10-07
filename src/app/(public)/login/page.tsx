@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { isMfaPending } from '@/lib/supabase/mfa'
 import { prisma } from '@/lib/prisma'
 import { LoginForm } from '@/components/auth/LoginForm'
 import { Shield, Lock } from 'lucide-react'
@@ -16,6 +17,8 @@ export default async function LoginPage() {
   } = await supabase.auth.getUser()
 
   if (user) {
+    // Sesión con 2FA pendiente → completar el segundo factor (evita bucle login ↔ dashboard)
+    if (await isMfaPending(supabase, user)) redirect('/verify-2fa')
     const dbUser = await prisma.user.findUnique({ where: { supabaseId: user.id } })
     if (dbUser) {
       redirect('/dashboard')
