@@ -20,12 +20,12 @@ interface CallResult {
   body: unknown
 }
 
-const ADMIN_ROLE = 'SecureVault.Admin'
+const ADMIN_ROLE = 'Admin'
 
 const ENDPOINTS = [
   { path: '/me', label: 'Mi identidad', hint: 'Cualquier usuario autenticado' },
-  { path: '/documents', label: 'Documentos', hint: 'Rol SecureVault.User o Admin' },
-  { path: '/admin/audit', label: 'Auditoría (admin)', hint: 'Solo rol SecureVault.Admin' },
+  { path: '/documents', label: 'Documentos', hint: 'Rol User o Admin' },
+  { path: '/admin/audit', label: 'Auditoría (admin)', hint: 'Solo rol Admin' },
 ]
 
 export default function PortalPage() {

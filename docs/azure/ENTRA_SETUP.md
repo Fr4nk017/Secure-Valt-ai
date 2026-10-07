@@ -24,8 +24,8 @@ Entra ID → *App registrations* → *New registration* → `SecureVault API` (s
 
 1. **Expose an API** → Application ID URI: `api://<API_CLIENT_ID>` → *Add a scope*: `access_as_user` (Admins and users).
 2. **App roles** → crear (Allowed member types: Users/Groups):
-   - `SecureVault.Admin` — Administrador
-   - `SecureVault.User` — Usuario
+   - `Admin` — Administrador
+   - `User` — Usuario
 3. **Manifest** → `"accessTokenAcceptedVersion": 2` (para que el `iss` sea `https://login.microsoftonline.com/<TENANT_ID>/v2.0`).
 4. *Enterprise applications* → `SecureVault API` → *Users and groups* → asignar usuarios a cada rol.
 
@@ -37,7 +37,9 @@ Entra ID → *App registrations* → *New registration* → `SecureVault API` (s
    - `http://localhost:3000/portal`
    - `https://securevault-ai-francisco-dth5fndpbma0d2hy.brazilsouth-01.azurewebsites.net/portal`
    - Front-channel logout / post logout: `.../login`
-2. **API permissions** → *Add* → *My APIs* → `SecureVault API` → `access_as_user` → **Grant admin consent**.
+   - *Implicit grant and hybrid flows*: dejar **desmarcados** Access tokens e ID tokens (MSAL usa Authorization Code + PKCE).
+2. **API permissions** → *Add* → *APIs my organization uses* → `SecureVault API` → *Delegated* → `access_as_user` (más `openid`, `profile`, `email`, `offline_access`) → **Grant admin consent**.
+3. **Token configuration** (en la App API) → *Add optional claim* → Access token → `email`, `preferred_username` (el BFF vincula al usuario de SecureVault por email).
 
 ## 3. Variables de entorno
 

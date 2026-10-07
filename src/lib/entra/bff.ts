@@ -11,8 +11,8 @@ import { assertRole, extractBearerToken, verifyEntraToken, EntraAuthError, type 
 
 /** App roles definidos en la App API de Entra ID (manifest → appRoles). */
 export const ENTRA_ROLES = {
-  ADMIN: 'SecureVault.Admin',
-  USER: 'SecureVault.User',
+  ADMIN: 'Admin',
+  USER: 'User',
 } as const
 
 type Handler<C> = (request: NextRequest, claims: EntraClaims, context: C) => Promise<Response> | Response

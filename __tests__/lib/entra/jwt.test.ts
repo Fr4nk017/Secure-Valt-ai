@@ -22,7 +22,7 @@ beforeAll(async () => {
 const getKey = async () => publicKey
 
 function sign(claims: Record<string, unknown> = {}, opts: { key?: KeyLike; exp?: string | number } = {}) {
-  return new SignJWT({ scp: 'access_as_user', tid: config.tenantId, roles: ['SecureVault.User'], ...claims })
+  return new SignJWT({ scp: 'access_as_user', tid: config.tenantId, roles: ['User'], ...claims })
     .setProtectedHeader({ alg: 'RS256' })
     .setIssuer(`https://login.microsoftonline.com/${config.tenantId}/v2.0`)
     .setAudience(config.apiClientId)
@@ -39,7 +39,7 @@ async function expectAuthError(promise: Promise<unknown>, status: number, code: 
 describe('verifyEntraToken', () => {
   it('acepta un token válido y devuelve sus claims', async () => {
     const claims = await verifyEntraToken(await sign(), config, getKey)
-    expect(claims.roles).toEqual(['SecureVault.User'])
+    expect(claims.roles).toEqual(['User'])
   })
 
   it('rechaza una firma de otra clave (401)', async () => {
@@ -78,11 +78,11 @@ describe('verifyEntraToken', () => {
 
 describe('assertRole', () => {
   it('permite si el token tiene un rol permitido', () => {
-    expect(() => assertRole({ roles: ['SecureVault.Admin'] }, ['SecureVault.Admin'])).not.toThrow()
+    expect(() => assertRole({ roles: ['Admin'] }, ['Admin'])).not.toThrow()
   })
 
   it('lanza 403 si falta el rol', () => {
-    expect(() => assertRole({ roles: ['SecureVault.User'] }, ['SecureVault.Admin'])).toThrow(
+    expect(() => assertRole({ roles: ['User'] }, ['Admin'])).toThrow(
       expect.objectContaining({ status: 403, code: 'forbidden_role' }),
     )
   })
