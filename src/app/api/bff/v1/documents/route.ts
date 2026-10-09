@@ -2,7 +2,7 @@
  * GET /api/bff/v1/documents
  *
  * Lista los documentos activos de la empresa del usuario autenticado.
- * Requiere App role SecureVault.User o SecureVault.Admin.
+ * Requiere App role User o Admin.
  */
 
 import { NextResponse } from 'next/server'

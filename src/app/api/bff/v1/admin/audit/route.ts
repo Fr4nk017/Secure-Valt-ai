@@ -2,7 +2,7 @@
  * GET /api/bff/v1/admin/audit
  *
  * Últimos eventos de auditoría del sistema.
- * Requiere App role SecureVault.Admin (otro rol → 403).
+ * Requiere App role Admin (otro rol → 403).
  */
 
 import { NextResponse } from 'next/server'
