@@ -34,15 +34,30 @@ jobs:
           NEXT_PUBLIC_ENTRA_API_SCOPE: ${{ vars.ENTRA_API_SCOPE }}
           NEXT_PUBLIC_BFF_BASE_URL: ${{ vars.BFF_BASE_URL || '/api/bff/v1' }}
         run: |
-          npm install
-          npm run build --if-present
-          npm run test --if-present
+          npm ci
+          npm run build
+          npm run test
+
+      # Paquete standalone (~70 MB): solo lo que el servidor necesita para correr.
+      # Subir el proyecto completo (node_modules de desarrollo, ~760 MB) llena
+      # el disco de 1 GB del plan F1 y el despliegue se cuelga.
+      - name: Prepare standalone package
+        run: |
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          # Respaldo del cliente Prisma en una carpeta visible: el optimizador de
+          # Azure (Oryx) puede omitir carpetas ocultas como node_modules/.prisma
+          mkdir -p .next/standalone/prisma_generated/client
+          cp -r node_modules/.prisma/client/. .next/standalone/prisma_generated/client/
+
+      - name: Create deployment zip
+        run: cd .next/standalone && zip -qr ../../node-app.zip .
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: node-app.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -56,7 +71,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
-      
+          path: .
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -70,4 +86,10 @@ jobs:
         with:
           app-name: 'securevault-ai-francisco'
           slot-name: 'Production'
-          package: .
+          package: node-app.zip
+          # Borra los archivos del despliegue anterior antes de copiar (sin esto
+          # el despliegue es incremental y acumula archivos hasta llenar el disco)
+          clean: true
+          # Restaura el cliente Prisma si hiciera falta y arranca el servidor
+          # standalone escuchando en todas las interfaces (Azure enruta al PORT)
+          startup-command: 'mkdir -p node_modules/.prisma/client && cp -rn prisma_generated/client/. node_modules/.prisma/client/; HOSTNAME=0.0.0.0 node server.js'
