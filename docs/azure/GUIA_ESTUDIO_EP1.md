@@ -1,6 +1,12 @@
 # Guía de estudio — EP1 DSY1107 en SecureVault AI
 
-Repositorio: Fr4nk017/Secure-Valt-ai · Rama: feat/entra-id-2fa · Estado: funcionando en local; despliegue en Azure y API Management pendientes.
+Repositorio: Fr4nk017/Secure-Valt-ai (rama main) · Estado (15-oct-2026): COMPLETO y funcionando en Azure: login MSAL, API Management validando el JWT y BFF validando el JWT + roles.
+
+Objetivo del encargo (EP1, pág. 1): diseñar y desarrollar la arquitectura base del sistema garantizando una comunicación segura entre el frontend, el backend y los servicios en la nube.
+
+URLs:
+- App (frontend + BFF): https://securevault-ai-francisco-dth5fndpbma0d2hy.brazilsouth-01.azurewebsites.net (portal: /portal)
+- Gateway (API Management): https://securevault-apim-francisco.azure-api.net/securevault/v1
 
 ## 1. Qué pide la evaluación y cómo lo adaptamos
 
@@ -116,7 +122,23 @@ Códigos de error del BFF:
 - 403 insufficient_scope: falta access_as_user
 - 403 forbidden_role: falta el App role requerido
 
-## 7. Resultados verificados en local
+## 7. Resultados verificados (local y en la nube)
+
+En la nube, el portal llama a la API pasando por el gateway (tráfico real observado): securevault-apim-francisco.azure-api.net/securevault/v1/me, /admin/audit y /documents.
+
+| Prueba en Azure | Resultado | Qué demuestra |
+|---|---|---|
+| Gateway sin token (curl) | 401 "Token inválido o ausente" (mensaje de la política de APIM) | El gateway rechaza antes de llegar al servidor |
+| Gateway con token falso | 401 de APIM | validate-jwt verifica la firma |
+| Ruta no declarada en el gateway | 404 | El gateway solo expone las 3 operaciones |
+| Preflight CORS desde el sitio | 200 con Access-Control-Allow-Origin del sitio | Solo nuestro frontend puede llamar a la API desde el navegador |
+| GET /me con token real (vía APIM) | 200, roles [Admin], scope access_as_user | Pasó la validación del gateway y del BFF |
+| GET /admin/audit con rol Admin (vía APIM) | 200 con eventos reales de la base | RBAC + consulta a Supabase con Prisma |
+| GET /documents (vía APIM) | 404 user_not_linked | Seguridad OK; el correo de Entra ID no existe como usuario de SecureVault |
+
+Antes de aplicar la política, el rechazo sin token venía del BFF ("Falta el header Authorization"); después, viene del gateway. Esa diferencia demuestra las dos capas (defensa en profundidad).
+
+Resultados en local:
 
 | Prueba | Resultado |
 |---|---|
@@ -144,12 +166,29 @@ Backend (en App Service → Variables de entorno):
 - ENTRA_API_CLIENT_ID = client ID de la App API
 - ENTRA_REQUIRED_SCOPE = access_as_user (opcional)
 
-## 10. Pendientes para cerrar la EP1
+## 10. Azure API Management (el "API Manager" de la rúbrica)
 
-1. Asignar roles Admin y User (y crear un usuario de prueba con rol User para mostrar el 403).
-2. Cargar las variables en GitHub (Actions → Variables) y en el App Service; luego hacer push a main para desplegar.
-3. Crear Azure API Management (plan Consumo), API "securevault" versionada /v1, operaciones GET /me, /documents, /admin/audit, aplicar apim-policy.xml y apuntar NEXT_PUBLIC_BFF_BASE_URL al gateway.
-4. Preparar la presentación.
+Recurso: securevault-apim-francisco (plan Consumo, grupo securevault-rg, suscripción Azure for Students, directorio Duoc).
+- Por qué plan Consumo: el primer millón de llamadas al mes es gratis y se crea en minutos (Developer cuesta ~USD 50/mes y tarda 30–45 min).
+- API "SecureVault BFF" (nombre securevault), sufijo /securevault, versionada por ruta: v1. Backend (web service URL): .../api/bff/v1 del App Service.
+- Operaciones: GET /me, GET /documents, GET /admin/audit (cualquier otra ruta → 404 en el gateway).
+- "Subscription required" desactivado: autenticamos con el JWT de Entra ID, no con claves de APIM.
+- Política (Todas las operaciones → Inbound): cors (solo el origen del sitio), validate-jwt (openid-config del tenant → JWKS para la firma; audiences; issuers v2.0; require-expiration-time; required-claims scp = access_as_user; 401 si falla) y set-backend-service.
+- rate-limit-by-key (throttling) no está disponible en el plan Consumo; se agregaría en un plan Basic o superior.
+- El frontend usa el gateway gracias a la variable de GitHub BFF_BASE_URL = https://securevault-apim-francisco.azure-api.net/securevault/v1 (se incrusta en el build como NEXT_PUBLIC_BFF_BASE_URL).
+
+## 10b. Despliegue y problemas resueltos
+
+- Dos directorios: la identidad (apps de Entra ID) está en el tenant "Francisco"; el hosting (App Service, API Management) está en la suscripción Azure for Students del directorio Duoc. Se cambia con ⚙️ → Directorios + suscripciones.
+- Disco lleno en el plan Gratis (F1, 1 GB): el workflow subía el proyecto completo (236 MB comprimidos) en modo incremental y el despliegue falló con "No space left on device" y luego "409 Conflict". Solución: subir solo el build standalone de Next.js (~36 MB) + static + public, con clean: true (borra el despliegue anterior) y startup-command "HOSTNAME=0.0.0.0 node server.js". Hubo que vaciar /home/site/wwwroot una vez desde la consola de Kudu (SSH → Kudu).
+- Supabase gratuito se pausa por inactividad: los dominios dejaron de resolver; se reactiva con "Restore project" en supabase.com. Conviene entrar a la app 1–2 días antes de presentar.
+- Google Safe Browsing marcó el sitio (y el del equipo) como "engañoso" (falso positivo: página de login con logos de Microsoft/Google en un dominio *.azurewebsites.net). Se soluciona pidiendo revisión en Google Search Console; mientras tanto, "Detalles → Visitar sitio" o usar Edge.
+
+## 10c. Pendientes opcionales
+
+1. Usuario de prueba con rol User para mostrar el 403 en vivo.
+2. Solicitar la revisión a Google (Search Console).
+3. Vincular el correo de Entra ID a un usuario de SecureVault para que /documents devuelva 200.
 
 ## 11. Guion para la demo y preguntas probables
 
