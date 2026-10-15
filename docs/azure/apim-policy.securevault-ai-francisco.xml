@@ -1,0 +1,58 @@
+<!--
+  Azure API Management — política inbound para la API "securevault" (versión v1).
+  Equivale al JWT Authorizer de AWS API Gateway: valida el token de Entra ID
+  ANTES de reenviar la petición al BFF en Azure App Service.
+
+  Reemplazar 2ce3b98a-6107-4394-8c67-ab37c7dc7135, 0b1a7455-d813-4d1a-a234-84d9ae910fad y https://securevault-ai-francisco-dth5fndpbma0d2hy.brazilsouth-01.azurewebsites.net (o definirlos como Named Values).
+-->
+<policies>
+  <inbound>
+    <base />
+    <cors allow-credentials="false">
+      <allowed-origins>
+        <origin>https://securevault-ai-francisco-dth5fndpbma0d2hy.brazilsouth-01.azurewebsites.net</origin>
+      </allowed-origins>
+      <allowed-methods>
+        <method>GET</method>
+        <method>POST</method>
+        <method>PUT</method>
+        <method>DELETE</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>Authorization</header>
+        <header>Content-Type</header>
+      </allowed-headers>
+    </cors>
+    <!-- Validación del JWT: firma (JWKS vía OpenID config), iss, aud, exp y scope -->
+    <validate-jwt header-name="Authorization" failed-validation-httpcode="401"
+                  failed-validation-error-message="Token inválido o ausente" require-scheme="Bearer"
+                  require-expiration-time="true" require-signed-tokens="true">
+      <openid-config url="https://login.microsoftonline.com/2ce3b98a-6107-4394-8c67-ab37c7dc7135/v2.0/.well-known/openid-configuration" />
+      <audiences>
+        <audience>0b1a7455-d813-4d1a-a234-84d9ae910fad</audience>
+        <audience>api://0b1a7455-d813-4d1a-a234-84d9ae910fad</audience>
+      </audiences>
+      <issuers>
+        <issuer>https://login.microsoftonline.com/2ce3b98a-6107-4394-8c67-ab37c7dc7135/v2.0</issuer>
+      </issuers>
+      <required-claims>
+        <claim name="scp" match="any" separator=" ">
+          <value>access_as_user</value>
+        </claim>
+      </required-claims>
+    </validate-jwt>
+    <!-- Throttling (rate-limit-by-key) omitido: no está disponible en el plan Consumo.
+         En planes Basic o superiores se agrega aquí, limitando por el claim oid. -->
+    <!-- Reenviar al BFF versionado (el BFF vuelve a validar el JWT: defensa en profundidad) -->
+    <set-backend-service base-url="https://securevault-ai-francisco-dth5fndpbma0d2hy.brazilsouth-01.azurewebsites.net/api/bff/v1" />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
