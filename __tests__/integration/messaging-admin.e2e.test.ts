@@ -18,7 +18,12 @@ const BINDING = `e2e-auditoria-${suffix}`
 
 describeWithBroker('Administrador de mensajería (broker real)', () => {
   jest.setTimeout(60_000)
-  const service = new MessagingAdminService()
+  // Se crea en beforeAll: el cuerpo de describe se evalúa aunque la suite esté omitida,
+  // y sin broker configurado el constructor fallaría (p. ej. en CI).
+  let service: MessagingAdminService
+  beforeAll(() => {
+    service = new MessagingAdminService()
+  })
 
   afterAll(async () => {
     await service.deleteQueue(QUEUE).catch(() => {})
